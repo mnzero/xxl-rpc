@@ -1,11 +1,18 @@
 package com.xxl.rpc.remoting.invoker;
 
 import com.xxl.rpc.registry.ServiceRegistry;
+import com.xxl.rpc.registry.impl.LocalServiceRegistry;
 import com.xxl.rpc.remoting.net.params.BaseCallback;
+import com.xxl.rpc.remoting.net.params.XxlRpcFutureResponse;
+import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
+import com.xxl.rpc.util.XxlRpcException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
 
 /**
  * xxl-rpc invoker factory, init service-registry
@@ -13,6 +20,14 @@ import java.util.Map;
  * @author xuxueli 2018-10-19
  */
 public class XxlRpcInvokerFactory {
+    private static Logger logger = LoggerFactory.getLogger(XxlRpcInvokerFactory.class);
+
+    // ---------------------- default instance ----------------------
+
+    private static volatile XxlRpcInvokerFactory instance = new XxlRpcInvokerFactory(LocalServiceRegistry.class, null);
+    public static XxlRpcInvokerFactory getInstance() {
+        return instance;
+    }
 
 
     // ---------------------- config ----------------------
@@ -27,6 +42,7 @@ public class XxlRpcInvokerFactory {
         this.serviceRegistryClass = serviceRegistryClass;
         this.serviceRegistryParam = serviceRegistryParam;
     }
+
 
     // ---------------------- start / stop ----------------------
 
@@ -47,10 +63,16 @@ public class XxlRpcInvokerFactory {
         // stop callback
         if (stopCallbackList.size() > 0) {
             for (BaseCallback callback: stopCallbackList) {
-                callback.run();
+                try {
+                    callback.run();
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
             }
         }
 
+        // stop CallbackThreadPool
+        stopCallbackThreadPool();
     }
 
 
@@ -62,12 +84,93 @@ public class XxlRpcInvokerFactory {
     }
 
 
-    // ---------------------- service registry (static) ----------------------
-    private static List<BaseCallback> stopCallbackList = new ArrayList<BaseCallback>();     // JettyClient、ClientPooled
+    // ---------------------- service registry ----------------------
 
-    public static void addStopCallBack(BaseCallback callback){
+    private List<BaseCallback> stopCallbackList = new ArrayList<BaseCallback>();
+
+    public void addStopCallBack(BaseCallback callback){
         stopCallbackList.add(callback);
     }
 
+
+    // ---------------------- future-response pool ----------------------
+
+    // XxlRpcFutureResponseFactory
+
+    private ConcurrentMap<String, XxlRpcFutureResponse> futureResponsePool = new ConcurrentHashMap<String, XxlRpcFutureResponse>();
+    public void setInvokerFuture(String requestId, XxlRpcFutureResponse futureResponse){
+        futureResponsePool.put(requestId, futureResponse);
+    }
+    public void removeInvokerFuture(String requestId){
+        futureResponsePool.remove(requestId);
+    }
+    public void notifyInvokerFuture(String requestId, final XxlRpcResponse xxlRpcResponse){
+
+        // get
+        final XxlRpcFutureResponse futureResponse = futureResponsePool.get(requestId);
+        if (futureResponse == null) {
+            return;
+        }
+
+        // notify
+        if (futureResponse.getInvokeCallback()!=null) {
+
+            // callback type
+            try {
+                executeResponseCallback(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (xxlRpcResponse.getErrorMsg() != null) {
+                            futureResponse.getInvokeCallback().onFailure(new XxlRpcException(xxlRpcResponse.getErrorMsg()));
+                        } else {
+                            futureResponse.getInvokeCallback().onSuccess(xxlRpcResponse.getResult());
+                        }
+                    }
+                });
+            }catch (Exception e) {
+                logger.error(e.getMessage(), e);
+            }
+        } else {
+
+            // other nomal type
+            futureResponse.setResponse(xxlRpcResponse);
+        }
+
+        // do remove
+        futureResponsePool.remove(requestId);
+
+    }
+
+
+    // ---------------------- response callback ThreadPool ----------------------
+
+    private ThreadPoolExecutor responseCallbackThreadPool = null;
+    public void executeResponseCallback(Runnable runnable){
+
+        if (responseCallbackThreadPool == null) {
+            synchronized (this) {
+                if (responseCallbackThreadPool == null) {
+                    responseCallbackThreadPool = new ThreadPoolExecutor(
+                            10,
+                            100,
+                            60L,
+                            TimeUnit.SECONDS,
+                            new LinkedBlockingQueue<Runnable>(1000),
+                            new RejectedExecutionHandler() {
+                                @Override
+                                public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+                                    throw new XxlRpcException("xxl-rpc Invoke Callback Thread pool is EXHAUSTED!");
+                                }
+                            });		// default maxThreads 300, minThreads 60
+                }
+            }
+        }
+        responseCallbackThreadPool.execute(runnable);
+    }
+    public void stopCallbackThreadPool() {
+        if (responseCallbackThreadPool != null) {
+            responseCallbackThreadPool.shutdown();
+        }
+    }
 
 }

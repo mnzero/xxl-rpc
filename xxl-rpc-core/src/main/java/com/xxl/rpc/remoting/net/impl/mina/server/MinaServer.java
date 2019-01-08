@@ -6,6 +6,7 @@ import com.xxl.rpc.remoting.net.impl.mina.codec.MinaEncoder;
 import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
 import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
 import com.xxl.rpc.remoting.provider.XxlRpcProviderFactory;
+import com.xxl.rpc.util.XxlRpcException;
 import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFactory;
@@ -17,7 +18,7 @@ import org.apache.mina.transport.socket.SocketSessionConfig;
 import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 /**
  * mina rpc server
@@ -35,8 +36,23 @@ public class MinaServer extends Server {
 			@Override
 			public void run() {
 
+				// param
+				final ThreadPoolExecutor serverHandlerPool = new ThreadPoolExecutor(
+						60,
+						300,
+						60L,
+						TimeUnit.SECONDS,
+						new LinkedBlockingQueue<Runnable>(1000),
+						new RejectedExecutionHandler() {
+							@Override
+							public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+								throw new XxlRpcException("xxl-rpc MinaServer Thread pool is EXHAUSTED!");
+							}
+						});		// default maxThreads 300, minThreads 60
 				NioSocketAcceptor acceptor = new NioSocketAcceptor();
+
 				try {
+					// start server
 					acceptor.getFilterChain().addLast("threadPool", new ExecutorFilter(Executors.newCachedThreadPool()));
 					acceptor.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ProtocolCodecFactory() {
 						@Override
@@ -48,13 +64,13 @@ public class MinaServer extends Server {
 							return new MinaDecoder(XxlRpcRequest.class, xxlRpcProviderFactory.getSerializer());
 						}
 					}));
-					acceptor.setHandler(new MinaServerHandler(xxlRpcProviderFactory));
+					acceptor.setHandler(new MinaServerHandler(xxlRpcProviderFactory, serverHandlerPool));
 					
 					SocketSessionConfig config = acceptor.getSessionConfig();
+					config.setTcpNoDelay(true);
 					config.setReuseAddress(true);
-					config.setTcpNoDelay(true);	// TCP_NODELAY和TCP_CORK基本上控制了包的“Nagle化”，这里我们主要讲TCP_NODELAY.Nagle化在这里的含义是采用Nagle算法把较小的包组装为更大的帧。
-					config.setSoLinger(0);		// 执行Socket的close方法，该方法也会立即返回
-					config.setReadBufferSize(1024 * 2);
+					config.setKeepAlive(true);
+					config.setSoLinger(-1);
 					config.setIdleTime(IdleStatus.BOTH_IDLE, 10);
 					
 					acceptor.bind(new InetSocketAddress(xxlRpcProviderFactory.getPort()));
@@ -62,13 +78,32 @@ public class MinaServer extends Server {
 					logger.info(">>>>>>>>>>> xxl-rpc remoting server start success, nettype = {}, port = {}", MinaServer.class.getName(), xxlRpcProviderFactory.getPort());
 					onStarted();
 
-				} catch (Exception e) {
-					logger.error(">>>>>>>>>>> xxl-rpc remoting server start error.", e);
-				} finally {
-					if (acceptor != null && acceptor.isActive()) {
-						acceptor.unbind();
-						acceptor.dispose();
+					while (!Thread.currentThread().isInterrupted()) {
+						Thread.sleep(1);
 					}
+				} catch (Exception e) {
+					if (e instanceof InterruptedException) {
+						logger.info(">>>>>>>>>>> xxl-rpc remoting server stop.");
+					} else {
+						logger.error(">>>>>>>>>>> xxl-rpc remoting server error.", e);
+					}
+				} finally {
+
+					// stop
+					try {
+						serverHandlerPool.shutdown();
+					} catch (Exception e) {
+						logger.error(e.getMessage(), e);
+					}
+					try {
+						if (acceptor.isActive()) {
+							acceptor.unbind();
+							acceptor.dispose();
+						}
+					} catch (Exception e) {
+						logger.error(e.getMessage(), e);
+					}
+
 				}
 			}
 		});
@@ -80,11 +115,12 @@ public class MinaServer extends Server {
     @Override
     public void stop() throws Exception {
 
-		// destroy server
+		// destroy server thread
 		if (thread!=null && thread.isAlive()) {
 			thread.interrupt();
 		}
 
+		// on stop
 		onStoped();
 		logger.info(">>>>>>>>>>> xxl-rpc remoting server destroy success.");
     }

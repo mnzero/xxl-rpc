@@ -1,5 +1,6 @@
 package com.xxl.rpc.remoting.net.impl.netty.client;
 
+import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
 import com.xxl.rpc.remoting.net.impl.netty.codec.NettyDecoder;
 import com.xxl.rpc.remoting.net.impl.netty.codec.NettyEncoder;
 import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
@@ -28,7 +29,7 @@ public class NettyPooledClient extends ClientPooled  {
 
 
 	@Override
-	public void init(String host, int port, final Serializer serializer) throws Exception {
+	public void init(String host, int port, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) throws Exception {
 		this.group = new NioEventLoopGroup();
     	Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(group).channel(NioSocketChannel.class)
@@ -38,13 +39,21 @@ public class NettyPooledClient extends ClientPooled  {
                     channel.pipeline()
                         .addLast(new NettyEncoder(XxlRpcRequest.class, serializer))
                         .addLast(new NettyDecoder(XxlRpcResponse.class, serializer))
-                        .addLast(new NettyClientHandler());
+                        .addLast(new NettyClientHandler(xxlRpcInvokerFactory));
                 }
             })
             .option(ChannelOption.TCP_NODELAY, true)
 			.option(ChannelOption.SO_REUSEADDR, true)
             .option(ChannelOption.SO_KEEPALIVE, true);
         this.channel = bootstrap.connect(host, port).sync().channel();
+
+        // valid
+		if (!isValidate()) {
+			close();
+			return;
+		}
+
+		logger.debug(">>>>>>>>>>> xxl-rpc netty client proxy, connect to server success at host:{}, port:{}", host, port);
 	}
 
 
@@ -59,13 +68,13 @@ public class NettyPooledClient extends ClientPooled  {
 
 	@Override
 	public void close() {
-		if (this.channel != null) {
+		if (this.channel!=null && this.channel.isActive()) {
 			this.channel.close();		// if this.channel.isOpen()
 		}
-		if (this.group != null) {
-			group.shutdownGracefully();
+		if (this.group!=null && !this.group.isShutdown()) {
+			this.group.shutdownGracefully();
 		}
-		logger.debug(">>>>>>>>>>>> xxl-rpc netty client close.");
+		logger.debug(">>>>>>>>>>> xxl-rpc netty client close.");
 	}
 
 

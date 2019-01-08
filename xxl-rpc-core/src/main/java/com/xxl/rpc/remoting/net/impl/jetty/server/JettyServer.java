@@ -15,9 +15,8 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
  */
 public class JettyServer extends Server {
 
-	private org.eclipse.jetty.server.Server server;
-	private Thread thread;
 
+	private Thread thread;
 
 	@Override
 	public void start(final XxlRpcProviderFactory xxlRpcProviderFactory) throws Exception {
@@ -28,7 +27,7 @@ public class JettyServer extends Server {
 			public void run() {
 
 				// The Server
-				server = new org.eclipse.jetty.server.Server(new QueuedThreadPool());	// default maxThreads 200, minThreads 8
+				org.eclipse.jetty.server.Server server = new org.eclipse.jetty.server.Server(new QueuedThreadPool());	// default maxThreads 200, minThreads 8
 				// TODO, thread config, change to async servlet
 
 				// HTTP connector
@@ -52,12 +51,19 @@ public class JettyServer extends Server {
 
 					server.join();
 				} catch (Exception e) {
-					logger.error(">>>>>>>>>>> xxl-rpc remoting server start error.", e);
+                    if (e instanceof InterruptedException) {
+                        logger.info(">>>>>>>>>>> xxl-rpc remoting server stop.");
+                    } else {
+                        logger.error(">>>>>>>>>>> xxl-rpc remoting server error.", e);
+                    }
 				} finally {
-					try {
-						stop();
-					} catch (Exception e) {
-						logger.error(e.getMessage(), e);
+					if (server!=null && server.isRunning()) {
+						try {
+							server.stop();
+							server.destroy();
+						} catch (Exception e) {
+							logger.error(e.getMessage(), e);
+						}
 					}
 				}
 			}
@@ -70,19 +76,12 @@ public class JettyServer extends Server {
 	@Override
 	public void stop() throws Exception {
 
-		// destroy server
-		if (server!=null && server.isRunning()) {
-			try {
-				server.stop();
-				server.destroy();
-			} catch (Exception e) {
-				logger.error(e.getMessage(), e);
-			}
-		}
+		// destroy server thread
 		if (thread!=null && thread.isAlive()) {
 			thread.interrupt();
 		}
 
+		// on stop
 		onStoped();
 		logger.info(">>>>>>>>>>> xxl-rpc remoting server destroy success.");
 	}

@@ -20,7 +20,7 @@ public abstract class ClientPooled {
 
     // ---------------------- iface ----------------------
 
-    public abstract void init(String host, int port, Serializer serializer) throws Exception;
+    public abstract void init(String host, int port, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) throws Exception;
 
     public abstract void close();
 
@@ -31,25 +31,30 @@ public abstract class ClientPooled {
 
     // ---------------------- client pool map ----------------------
 
-    private static ConcurrentHashMap<String, GenericObjectPool<ClientPooled>> clientPoolMap;
-    public static GenericObjectPool<ClientPooled> getPool(String address, Serializer serializer, Class<? extends ClientPooled> clientPoolImpl) throws Exception {
+    private static ConcurrentHashMap<String, GenericObjectPool<ClientPooled>> clientPoolMap;        // (static) alread addStopCallBack
+    public static GenericObjectPool<ClientPooled> getPool(String address, Class<? extends ClientPooled> clientPoolImpl, Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) throws Exception {
 
+        // init client-pool-map, avoid repeat init
         if (clientPoolMap == null) {
-            // init
-            clientPoolMap = new ConcurrentHashMap<String, GenericObjectPool<ClientPooled>>();
-            // stop callback
-            XxlRpcInvokerFactory.addStopCallBack(new BaseCallback() {
-                @Override
-                public void run() throws Exception {
-                    if (clientPoolMap.size() > 0) {
-                        for (String key:clientPoolMap.keySet()) {
-                            GenericObjectPool<ClientPooled> clientPool = clientPoolMap.get(key);
-                            clientPool.close();
+            synchronized (ClientPooled.class) {
+                if (clientPoolMap == null) {
+                    // init
+                    clientPoolMap = new ConcurrentHashMap<String, GenericObjectPool<ClientPooled>>();
+                    // stop callback
+                    xxlRpcInvokerFactory.addStopCallBack(new BaseCallback() {
+                        @Override
+                        public void run() throws Exception {
+                            if (clientPoolMap.size() > 0) {
+                                for (String key:clientPoolMap.keySet()) {
+                                    GenericObjectPool<ClientPooled> clientPool = clientPoolMap.get(key);
+                                    clientPool.close();
+                                }
+                                clientPoolMap.clear();
+                            }
                         }
-                        clientPoolMap.clear();
-                    }
+                    });
                 }
-            });
+            }
         }
 
         // get pool
@@ -58,19 +63,30 @@ public abstract class ClientPooled {
             return clientPool;
         }
 
-        // parse address
-        Object[] array = IpUtil.parseIpPort(address);
-        String host = (String) array[0];
-        int port = (int) array[1];
+        // make pool, avoid repeat init
+        synchronized (clientPoolMap) {
 
-        // set pool
-        clientPool = new GenericObjectPool<ClientPooled>(new ClientPoolFactory(host, port, serializer, clientPoolImpl));
-        clientPool.setTestOnBorrow(true);
-        clientPool.setMaxTotal(2);
+            // re-get pool
+            clientPool = clientPoolMap.get(address);
+            if (clientPool != null) {
+                return clientPool;
+            }
 
-        clientPoolMap.put(address, clientPool);
+            // parse address
+            Object[] array = IpUtil.parseIpPort(address);
+            String host = (String) array[0];
+            int port = (int) array[1];
 
-        return clientPool;
+            // set pool
+            clientPool = new GenericObjectPool<ClientPooled>(new ClientPoolFactory(clientPoolImpl, host, port, serializer, xxlRpcInvokerFactory));
+            clientPool.setTestOnBorrow(true);
+            clientPool.setMaxTotal(2);
+
+            clientPoolMap.put(address, clientPool);
+
+            return clientPool;
+        }
+
     }
 
 }

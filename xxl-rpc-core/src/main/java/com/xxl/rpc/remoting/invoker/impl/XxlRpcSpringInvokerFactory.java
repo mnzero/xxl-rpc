@@ -17,7 +17,9 @@ import org.springframework.beans.factory.config.InstantiationAwareBeanPostProces
 import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * xxl-rpc invoker factory, init service-registry and spring-bean by annotation (for spring)
@@ -77,13 +79,14 @@ public class XxlRpcSpringInvokerFactory extends InstantiationAwareBeanPostProces
                             rpcReference.netType(),
                             rpcReference.serializer().getSerializer(),
                             rpcReference.callType(),
+                            rpcReference.loadBalance(),
                             iface,
                             rpcReference.version(),
                             rpcReference.timeout(),
                             rpcReference.address(),
                             rpcReference.accessToken(),
                             null,
-                            xxlRpcInvokerFactory.getServiceRegistry()
+                            xxlRpcInvokerFactory
                     );
 
                     Object serviceProxy = referenceBean.getObject();

@@ -1,5 +1,6 @@
 package com.xxl.rpc.remoting.net.impl.mina.client;
 
+import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
 import com.xxl.rpc.remoting.net.impl.mina.codec.MinaDecoder;
 import com.xxl.rpc.remoting.net.impl.mina.codec.MinaEncoder;
 import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
@@ -31,7 +32,7 @@ public class MinaPooledClient extends ClientPooled {
 
 
 	@Override
-	public void init(String host, int port, final Serializer serializer) {
+	public void init(String host, int port, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) {
 
 		connector = new NioSocketConnector();
 		connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ProtocolCodecFactory() {
@@ -44,35 +45,32 @@ public class MinaPooledClient extends ClientPooled {
 				return new MinaDecoder(XxlRpcResponse.class, serializer);
 			}
 		}));
-		connector.setHandler(new MinaClientHandler());
+		connector.setHandler(new MinaClientHandler(xxlRpcInvokerFactory));
 		connector.setConnectTimeoutMillis(5000);
 		
 		DefaultSocketSessionConfig sessionConfiguration = (DefaultSocketSessionConfig) connector.getSessionConfig();
-		sessionConfiguration.setReadBufferSize(1024);
-		sessionConfiguration.setSendBufferSize(512);
-		sessionConfiguration.setReuseAddress(true);
 		sessionConfiguration.setTcpNoDelay(true);
+		sessionConfiguration.setReuseAddress(true);
 		sessionConfiguration.setKeepAlive(true);
 		sessionConfiguration.setSoLinger(-1);
-		sessionConfiguration.setWriteTimeout(5);
-		
+
 		ConnectFuture future = connector.connect(new InetSocketAddress(host, port));
 		future.awaitUninterruptibly(5, TimeUnit.SECONDS);
-		
-		if (!future.isConnected()) {
-			logger.error(">>>>>>>>>>>> xxl-rpc mina client proxy, connect to server fail at host:{}, port:{}", host, port);
-			connector.dispose();
-			connector = null;
+		this.ioSession = future.getSession();
+
+		// valid
+		if (!isValidate()) {
+			close();
 			return;
 		}
-		this.ioSession = future.getSession();
-		logger.debug(">>>>>>>>>>>> xxl-rpc mina client proxy, connect to server success at host:{}, port:{}", host, port);
+
+		logger.debug(">>>>>>>>>>> xxl-rpc mina client proxy, connect to server success at host:{}, port:{}", host, port);
 	}
 
 
 	@Override
 	public boolean isValidate() {
-		if (this.ioSession != null && this.connector != null) {
+		if (this.connector != null && this.ioSession != null) {
 			return this.connector.isActive() && this.ioSession.isConnected();
 		}
 		return false;
@@ -81,18 +79,14 @@ public class MinaPooledClient extends ClientPooled {
 
 	@Override
 	public void close() {
-		if (this.ioSession != null) {
-			if (this.ioSession.isConnected()) {
-				ioSession.getCloseFuture().awaitUninterruptibly();
-			}
+		if (this.ioSession!=null && this.ioSession.isConnected()) {
+			//this.ioSession.getCloseFuture().awaitUninterruptibly();
 			this.ioSession.closeOnFlush();
-			this.ioSession = null;
 		}
-		if (this.connector != null) {
+		if (this.connector!=null && this.connector.isActive()) {
 			this.connector.dispose();
-			this.connector = null;
 		}
-		logger.debug(">>>>>>>>>>>> xxl-rpc mina client close.");
+		logger.debug(">>>>>>>>>>> xxl-rpc mina client close.");
 	}
 
 	@Override

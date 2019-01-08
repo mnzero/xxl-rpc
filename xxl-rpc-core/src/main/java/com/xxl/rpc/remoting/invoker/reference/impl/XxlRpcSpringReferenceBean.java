@@ -1,10 +1,11 @@
 package com.xxl.rpc.remoting.invoker.reference.impl;
 
-import com.xxl.rpc.registry.ServiceRegistry;
+import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
+import com.xxl.rpc.remoting.invoker.call.CallType;
 import com.xxl.rpc.remoting.invoker.call.XxlRpcInvokeCallback;
 import com.xxl.rpc.remoting.invoker.reference.XxlRpcReferenceBean;
+import com.xxl.rpc.remoting.invoker.route.LoadBalance;
 import com.xxl.rpc.remoting.net.NetEnum;
-import com.xxl.rpc.remoting.invoker.call.CallType;
 import com.xxl.rpc.serialize.Serializer;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.InitializingBean;
@@ -22,6 +23,7 @@ public class XxlRpcSpringReferenceBean implements FactoryBean<Object>, Initializ
     private String netType = NetEnum.NETTY.name();
     private String serialize = Serializer.SerializeEnum.HESSIAN.name();
     private String callType = CallType.SYNC.name();
+    private String loadBalance = LoadBalance.ROUND.name();
 
     private Class<?> iface;
     private String version;
@@ -33,7 +35,7 @@ public class XxlRpcSpringReferenceBean implements FactoryBean<Object>, Initializ
 
     private XxlRpcInvokeCallback invokeCallback;
 
-    private ServiceRegistry serviceRegistry;
+    private XxlRpcInvokerFactory xxlRpcInvokerFactory;
 
     // set
     public void setNetType(String netType) {
@@ -46,6 +48,10 @@ public class XxlRpcSpringReferenceBean implements FactoryBean<Object>, Initializ
 
     public void setCallType(String callType) {
         this.callType = callType;
+    }
+
+    public void setLoadBalance(String loadBalance) {
+        this.loadBalance = loadBalance;
     }
 
     public void setIface(Class<?> iface) {
@@ -72,8 +78,8 @@ public class XxlRpcSpringReferenceBean implements FactoryBean<Object>, Initializ
         this.invokeCallback = invokeCallback;
     }
 
-    public void setServiceRegistry(ServiceRegistry serviceRegistry) {
-        this.serviceRegistry = serviceRegistry;
+    public void setXxlRpcInvokerFactory(XxlRpcInvokerFactory xxlRpcInvokerFactory) {
+        this.xxlRpcInvokerFactory = xxlRpcInvokerFactory;
     }
 
     // ---------------------- init ----------------------
@@ -86,12 +92,22 @@ public class XxlRpcSpringReferenceBean implements FactoryBean<Object>, Initializ
         Serializer.SerializeEnum serializeEnum = Serializer.SerializeEnum.match(serialize, null);
         Serializer serializer = serializeEnum!=null?serializeEnum.getSerializer():null;
         CallType callTypeEnum = CallType.match(callType, null);
-        if (timeout <= 0) {
-            timeout = 10;
-        }
+        LoadBalance loadBalanceEnum = LoadBalance.match(loadBalance, null);
 
         // init config
-        xxlRpcReferenceBean = new XxlRpcReferenceBean(netTypeEnum, serializer, callTypeEnum, iface, version, timeout, address, accessToken, invokeCallback, serviceRegistry);
+        xxlRpcReferenceBean = new XxlRpcReferenceBean(
+                netTypeEnum,
+                serializer,
+                callTypeEnum,
+                loadBalanceEnum,
+                iface,
+                version,
+                timeout,
+                address,
+                accessToken,
+                invokeCallback,
+                xxlRpcInvokerFactory);
+
     }
 
     // ---------------------- util ----------------------

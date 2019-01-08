@@ -2,7 +2,9 @@ package com.xxl.rpc.remoting.net.impl.jetty.client;
 
 import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
 import com.xxl.rpc.remoting.net.Client;
-import com.xxl.rpc.remoting.net.params.*;
+import com.xxl.rpc.remoting.net.params.BaseCallback;
+import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
+import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
 import com.xxl.rpc.util.ThrowableUtil;
 import com.xxl.rpc.util.XxlRpcException;
 import org.eclipse.jetty.client.HttpClient;
@@ -50,7 +52,7 @@ public class JettyClient extends Client {
 		byte[] requestBytes = xxlRpcReferenceBean.getSerializer().serialize(xxlRpcRequest);
 
         // httpclient
-        HttpClient httpClient = getJettyHttpClient();
+        HttpClient httpClient = getJettyHttpClient(xxlRpcReferenceBean.getInvokerFactory());
 
         // request
         Request request = httpClient.newRequest(reqURL);
@@ -85,7 +87,7 @@ public class JettyClient extends Client {
                     XxlRpcResponse xxlRpcResponse = (XxlRpcResponse) xxlRpcReferenceBean.getSerializer().deserialize(responseBytes, XxlRpcResponse.class);
 
                     // notify response
-					XxlRpcFutureResponseFactory.notifyInvokerFuture(xxlRpcResponse.getRequestId(), xxlRpcResponse);
+					xxlRpcReferenceBean.getInvokerFactory().notifyInvokerFuture(xxlRpcResponse.getRequestId(), xxlRpcResponse);
 
                 } catch (Exception e){
 
@@ -114,7 +116,7 @@ public class JettyClient extends Client {
 							xxlRpcResponse.setErrorMsg(errorMsg);
 
 							// notify response
-							XxlRpcFutureResponseFactory.notifyInvokerFuture(xxlRpcResponse.getRequestId(), xxlRpcResponse);
+							xxlRpcReferenceBean.getInvokerFactory().notifyInvokerFuture(xxlRpcResponse.getRequestId(), xxlRpcResponse);
 
                         } catch (Exception e2) {
                             logger.info(">>>>>>>>>>> xxl-rpc, remoting request error, and callback error: " + e2.getMessage());
@@ -137,29 +139,41 @@ public class JettyClient extends Client {
 	 * @return
 	 * @throws Exception
 	 */
-	private static HttpClient jettyHttpClient;
-	public synchronized static HttpClient getJettyHttpClient() throws Exception {
+	private static HttpClient jettyHttpClient;		// (static) alread addStopCallBack
+	public static HttpClient getJettyHttpClient(final XxlRpcInvokerFactory xxlRpcInvokerFactory) throws Exception {
+
+		// get
 		if (jettyHttpClient != null) {
 			return jettyHttpClient;
 		}
 
-		// init jettp httpclient
-		jettyHttpClient = new HttpClient();
-		jettyHttpClient.setFollowRedirects(false);	                // avoid redirect-302
-		jettyHttpClient.setExecutor(new QueuedThreadPool());		// default maxThreads 200, minThreads 8
-		jettyHttpClient.setMaxConnectionsPerDestination(10000);	    // limit conn per desc
-		jettyHttpClient.start();						            // start
+		// init jetty cilent, avoid repeat init
+		synchronized (JettyClient.class) {
 
-		// stop callback
-		XxlRpcInvokerFactory.addStopCallBack(new BaseCallback() {
-			@Override
-			public void run() throws Exception {
-				if (jettyHttpClient != null) {
-					jettyHttpClient.stop();
-					jettyHttpClient = null;
-				}
+			// re-get
+			if (jettyHttpClient != null) {
+				return jettyHttpClient;
 			}
-		});
+
+
+			// init jettp httpclient
+			jettyHttpClient = new HttpClient();
+			jettyHttpClient.setFollowRedirects(false);	                // avoid redirect-302
+			jettyHttpClient.setExecutor(new QueuedThreadPool());		// default maxThreads 200, minThreads 8
+			jettyHttpClient.setMaxConnectionsPerDestination(10000);	    // limit conn per desc
+			jettyHttpClient.start();						            // start
+
+			// stop callback
+			xxlRpcInvokerFactory.addStopCallBack(new BaseCallback() {
+				@Override
+				public void run() throws Exception {
+					if (jettyHttpClient != null) {
+						jettyHttpClient.stop();
+						jettyHttpClient = null;
+					}
+				}
+			});
+		}
 
 		return jettyHttpClient;
 	}
