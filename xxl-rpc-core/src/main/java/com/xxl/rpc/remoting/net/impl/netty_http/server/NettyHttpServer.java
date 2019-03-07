@@ -1,10 +1,6 @@
-package com.xxl.rpc.remoting.net.impl.netty.server;
+package com.xxl.rpc.remoting.net.impl.netty_http.server;
 
 import com.xxl.rpc.remoting.net.Server;
-import com.xxl.rpc.remoting.net.impl.netty.codec.NettyDecoder;
-import com.xxl.rpc.remoting.net.impl.netty.codec.NettyEncoder;
-import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
-import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
 import com.xxl.rpc.remoting.provider.XxlRpcProviderFactory;
 import com.xxl.rpc.util.ThreadPoolUtil;
 import io.netty.bootstrap.ServerBootstrap;
@@ -15,15 +11,17 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
 
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * netty rpc server
+ * netty_http
  *
- * @author xuxueli 2015-10-29 18:17:14
+ * @author xuxueli 2015-11-24 22:25:15
  */
-public class NettyServer extends Server {
+public class NettyHttpServer extends Server  {
 
     private Thread thread;
 
@@ -31,11 +29,12 @@ public class NettyServer extends Server {
     public void start(final XxlRpcProviderFactory xxlRpcProviderFactory) throws Exception {
 
         thread = new Thread(new Runnable() {
+
             @Override
             public void run() {
 
                 // param
-                final ThreadPoolExecutor serverHandlerPool = ThreadPoolUtil.makeServerThreadPool(NettyServer.class.getSimpleName());
+                final ThreadPoolExecutor serverHandlerPool = ThreadPoolUtil.makeServerThreadPool(NettyHttpServer.class.getSimpleName());
                 EventLoopGroup bossGroup = new NioEventLoopGroup();
                 EventLoopGroup workerGroup = new NioEventLoopGroup();
 
@@ -46,26 +45,27 @@ public class NettyServer extends Server {
                             .channel(NioServerSocketChannel.class)
                             .childHandler(new ChannelInitializer<SocketChannel>() {
                                 @Override
-                                public void initChannel(SocketChannel channel) throws Exception {
-                                    channel.pipeline()
-                                            .addLast(new NettyDecoder(XxlRpcRequest.class, xxlRpcProviderFactory.getSerializer()))
-                                            .addLast(new NettyEncoder(XxlRpcResponse.class, xxlRpcProviderFactory.getSerializer()))
-                                            .addLast(new NettyServerHandler(xxlRpcProviderFactory, serverHandlerPool));
+                                public void initChannel(SocketChannel ch) throws Exception {
+                                    /*ch.pipeline().addLast(new HttpResponseEncoder());
+                                    ch.pipeline().addLast(new HttpRequestDecoder());*/
+                                    /*ch.pipeline().addLast(new ChunkedWriteHandler());*/
+                                    ch.pipeline().addLast(new HttpServerCodec());
+                                    ch.pipeline().addLast(new HttpObjectAggregator(5*1024*1024));  // merge request & reponse to FULL
+                                    ch.pipeline().addLast(new NettyHttpServerHandler(xxlRpcProviderFactory, serverHandlerPool));
                                 }
                             })
-                            .childOption(ChannelOption.TCP_NODELAY, true)
                             .childOption(ChannelOption.SO_KEEPALIVE, true);
 
                     // bind
                     ChannelFuture future = bootstrap.bind(xxlRpcProviderFactory.getPort()).sync();
 
-                    logger.info(">>>>>>>>>>> xxl-rpc remoting server start success, nettype = {}, port = {}", NettyServer.class.getName(), xxlRpcProviderFactory.getPort());
+                    logger.info(">>>>>>>>>>> xxl-rpc remoting server start success, nettype = {}, port = {}", NettyHttpServer.class.getName(), xxlRpcProviderFactory.getPort());
                     onStarted();
 
                     // wait util stop
                     future.channel().closeFuture().sync();
 
-                } catch (Exception e) {
+                } catch (InterruptedException e) {
                     if (e instanceof InterruptedException) {
                         logger.info(">>>>>>>>>>> xxl-rpc remoting server stop.");
                     } else {
@@ -75,7 +75,7 @@ public class NettyServer extends Server {
 
                     // stop
                     try {
-                        serverHandlerPool.shutdown();    // shutdownNow
+                        serverHandlerPool.shutdown();	// shutdownNow
                     } catch (Exception e) {
                         logger.error(e.getMessage(), e);
                     }
@@ -85,20 +85,19 @@ public class NettyServer extends Server {
                     } catch (Exception e) {
                         logger.error(e.getMessage(), e);
                     }
-
                 }
-            }
-        });
-        thread.setDaemon(true);
-        thread.start();
 
+            }
+
+        });
+        thread.setDaemon(true);	// daemon, service jvm, user thread leave >>> daemon leave >>> jvm leave
+        thread.start();
     }
 
     @Override
     public void stop() throws Exception {
-
         // destroy server thread
-        if (thread != null && thread.isAlive()) {
+        if (thread!=null && thread.isAlive()) {
             thread.interrupt();
         }
 

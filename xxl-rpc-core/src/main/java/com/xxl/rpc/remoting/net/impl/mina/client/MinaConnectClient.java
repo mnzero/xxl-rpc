@@ -1,12 +1,13 @@
 package com.xxl.rpc.remoting.net.impl.mina.client;
 
 import com.xxl.rpc.remoting.invoker.XxlRpcInvokerFactory;
+import com.xxl.rpc.remoting.net.common.ConnectClient;
 import com.xxl.rpc.remoting.net.impl.mina.codec.MinaDecoder;
 import com.xxl.rpc.remoting.net.impl.mina.codec.MinaEncoder;
 import com.xxl.rpc.remoting.net.params.XxlRpcRequest;
 import com.xxl.rpc.remoting.net.params.XxlRpcResponse;
-import com.xxl.rpc.remoting.net.pool.ClientPooled;
 import com.xxl.rpc.serialize.Serializer;
+import com.xxl.rpc.util.IpUtil;
 import org.apache.mina.core.future.ConnectFuture;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFactory;
@@ -24,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @author xuxueli
  */
-public class MinaPooledClient extends ClientPooled {
+public class MinaConnectClient extends ConnectClient {
 
 
 	private NioSocketConnector connector;
@@ -32,7 +33,12 @@ public class MinaPooledClient extends ClientPooled {
 
 
 	@Override
-	public void init(String host, int port, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) {
+	public void init(String address, final Serializer serializer, final XxlRpcInvokerFactory xxlRpcInvokerFactory) {
+
+		Object[] array = IpUtil.parseIpPort(address);
+		String host = (String) array[0];
+		int port = (int) array[1];
+
 
 		connector = new NioSocketConnector();
 		connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ProtocolCodecFactory() {
@@ -50,8 +56,8 @@ public class MinaPooledClient extends ClientPooled {
 		
 		DefaultSocketSessionConfig sessionConfiguration = (DefaultSocketSessionConfig) connector.getSessionConfig();
 		sessionConfiguration.setTcpNoDelay(true);
-		sessionConfiguration.setReuseAddress(true);
 		sessionConfiguration.setKeepAlive(true);
+		//sessionConfiguration.setReuseAddress(true);
 		sessionConfiguration.setSoLinger(-1);
 
 		ConnectFuture future = connector.connect(new InetSocketAddress(host, port));
