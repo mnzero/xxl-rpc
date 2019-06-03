@@ -509,10 +509,19 @@ public class Demo2ServiceImpl implements Demo2Service {
 - 6、通讯连接池address参数优化，出IP:PORT格式外兼容支持常规URL格式地址；
 - 7、线程名称优化，便于适配监控快速进行线程定位；
 
-### 5.8 版本 v1.4.0 Release Notes[ING]
+### 5.8 版本 v1.4.0 Release Notes[2019-04-20]
 - 1、LRU路由更新不及时问题修复；
-- [ING]"ConnectClient#clientLock" 优化，复用连接对象；
-- [ING]初始化枚举改为接口实例，方便扩展；
+- 2、JettyClient Buffer 默认长度调整为5M；
+- 3、Netty Http客户端配置优化；
+- 4、升级依赖版本，如netty/mina/spring等
+
+### 5.9 版本 v1.4.1 Release Notes[2019-05-23]
+- 1、客户端长连优化，修复初始化时服务不可用导致长连冗余创建的问题；
+- 2、升级依赖版本，如netty/mina/jetty/jackson/spring/spring-boot等;
+- 3、空闲链接自动回收：服务端与客户端主动检测空闲链接并回收，及时释放相关资源(netty、mina)；空闲超10min自动释放；
+
+### 5.10 版本 v1.4.2 Release Notes[迭代中]
+
 
 ### TODO
 - 提高系统可用性，以部分功能暂时不可达为代价，防止服务整体缓慢或雪崩
@@ -543,7 +552,11 @@ public class Demo2ServiceImpl implements Demo2Service {
 - Server/Client失败尽量响应，避免等到到timeout；
 - 线程隔离：通讯线程池拆分为Fast/Slow两个，针对响应较慢服务方法请求，降级使用Slow线程池；考虑是否可以方法级隔离线程池，避免线程阻塞；
 - rpc时钟参数仅记录，取消时钟校验逻辑；
-- 调用链追踪、监控，熔断，限流，降级；
+- 调用链追踪，监控；结合 xxl-apm 与 xxl-rpc filter共同演进；
+- 限流-熔断-降级，结合xxl-registry与xxl-rpc filter共同演进；
+- [ING]"ConnectClient#clientLock" 优化，复用连接对象；
+- [ING]初始化枚举改为接口实例，方便扩展；
+- 长连心跳、断线重连、空闲连接回收；
 
 
 ## 六、其他

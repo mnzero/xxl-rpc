@@ -14,9 +14,10 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.*;
-
+import io.netty.handler.timeout.IdleStateHandler;
 import java.net.URI;
 import java.net.URL;
+import java.util.concurrent.TimeUnit;
 
 /**
  * netty_http
@@ -53,8 +54,7 @@ public class NettyHttpConnectClient extends ConnectClient {
                     @Override
                     public void initChannel(SocketChannel channel) throws Exception {
                         channel.pipeline()
-                                /*.addLast(new HttpResponseDecoder())
-                                .addLast(new HttpRequestEncoder())*/
+                                .addLast(new IdleStateHandler(0,0,10, TimeUnit.MINUTES))
                                 .addLast(new HttpClientCodec())
                                 .addLast(new HttpObjectAggregator(5*1024*1024))
                                 .addLast(new NettyHttpClientHandler(xxlRpcInvokerFactory, serializer));
@@ -100,9 +100,9 @@ public class NettyHttpConnectClient extends ConnectClient {
     public void send(XxlRpcRequest xxlRpcRequest) throws Exception {
         byte[] requestBytes = serializer.serialize(xxlRpcRequest);
 
-        DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, new URI(address).toASCIIString(), Unpooled.wrappedBuffer(requestBytes));
+        DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, new URI(address).getRawPath(), Unpooled.wrappedBuffer(requestBytes));
         request.headers().set(HttpHeaderNames.HOST, host);
-        request.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderNames.CONNECTION);
+        request.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
         request.headers().set(HttpHeaderNames.CONTENT_LENGTH, request.content().readableBytes());
 
         this.channel.writeAndFlush(request).sync();
