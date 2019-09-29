@@ -247,7 +247,7 @@ callType | 请求类型，可选范围：SYNC（默认）、ONEWAY、FUTURE、CA
 
 // init
 XxlRpcProviderFactory providerFactory = new XxlRpcProviderFactory();
-providerFactory.initConfig(NetEnum.JETTY, Serializer.SerializeEnum.HESSIAN.getSerializer(), null, 7080, null, null, null);
+providerFactory.initConfig(NetEnum.NETTY, Serializer.SerializeEnum.HESSIAN.getSerializer(), -1, -1, null, 7080, null, null, null);
 
 // add services
 providerFactory.addService(DemoService.class.getName(), null, new DemoServiceImpl());
@@ -521,6 +521,11 @@ public class Demo2ServiceImpl implements Demo2Service {
 - 3、空闲链接自动回收：服务端与客户端主动检测空闲链接并回收，及时释放相关资源(netty、mina)；空闲超10min自动释放；
 
 ### 5.10 版本 v1.4.2 Release Notes[迭代中]
+- 1、代码优化，ConcurrentHashMap变量类型改为ConcurrentMap，避免因不同版本实现不同导致的兼容性问题；
+- 2、Netty Http客户端优化，识别并过滤非法响应数据；
+- 3、升级依赖版本，如netty/mina/hessian/jackson/zookeeper等;
+- 4、长连心跳保活：客户端周期性发送心跳请求给服务端；客户端心跳发送失败，或服务端连续三次未收到心跳时，销毁连接；(Netty、NettyHttp以支持；Mina迭代中；)
+- 5、服务线程优化，支持自定义线程参数；
 
 
 ### TODO
